@@ -13,145 +13,6 @@ import (
 	"strings"
 )
 
-func main() {
-	// 1. Hex to Base64
-	b64, err := hexToBase64([]byte("49276d206b696c6c696e6720796f757220627261696e206c696b65206120706f69736f6e6f7573206d757368726f6f6d"))
-	if err != nil {
-		panic(err)
-	}
-	if b64 != "SSdtIGtpbGxpbmcgeW91ciBicmFpbiBsaWtlIGEgcG9pc29ub3VzIG11c2hyb29t" {
-		panic(b64)
-	}
-
-	// 2. Fixed XOR
-	input, err := hex.DecodeString("1c0111001f010100061a024b53535009181c")
-	if err != nil {
-		panic(err)
-	}
-
-	key, err := hex.DecodeString("686974207468652062756c6c277320657965")
-	if err != nil {
-		panic(err)
-	}
-	xored, err := fixedXOR(input, key)
-	if err != nil {
-		panic(err)
-	}
-	if string(xored) != "the kid don't play" {
-		panic(string(xored))
-	}
-
-	// 3. Decrypt single char XOR
-	letterFrequencies, err := letterFrequencies("files/corpus.txt")
-	if err != nil {
-		panic(err)
-	}
-
-	input, err = hex.DecodeString("1b37373331363f78151b7f2b783431333d78397828372d363c78373e783a393b3736")
-	if err != nil {
-		panic(err)
-	}
-	plainText, _, _, err := decryptXORCipher(input, letterFrequencies)
-	if err != nil {
-		panic(err)
-	}
-	if string(plainText) != "Cooking MC's like a pound of bacon" {
-		panic(string(plainText))
-	}
-
-	// 4. Decrypt single byte XOR
-	ciphersAsHex, err := ioutil.ReadFile("files/4.txt")
-	if err != nil {
-		panic(err)
-	}
-
-	ciphers := make([][]byte, 0)
-	for _, hexCipher := range bytes.Split([]byte(ciphersAsHex), []byte("\n")) {
-		cipher := make([]byte, len(hexCipher)/2)
-		_, err := hex.Decode(cipher, hexCipher)
-		if err != nil {
-			panic(err)
-		}
-		ciphers = append(ciphers, cipher)
-	}
-
-	pt, err := decryptSingleByteXOR(ciphers, letterFrequencies)
-	if err != nil {
-		panic(err)
-	}
-	if string(pt)[:len(pt)-1] != string("Now that the party is jumping") {
-		panic(string(pt))
-	}
-
-	// 5. repeating key XOR
-	cipher := encryptRepeatingKeyXOR([]byte(`Burning 'em, if you ain't quick and nimble
-I go crazy when I hear a cymbal`), []byte("ICE"))
-	if cipher != "0b3637272a2b2e63622c2e69692a23693a2a3c6324202d623d63343c2a26226324272765272a282b2f20430a652e2c652a3124333a653e2b2027630c692b20283165286326302e27282f" {
-		panic(cipher)
-	}
-
-	// 6. Decrypt repeating XOR
-	d, err := hammingDistanceBits([]byte("this is a test"), []byte("wokka wokka!!!"))
-	if err != nil {
-		panic(err)
-	}
-	if d != 37 {
-		panic("d should be 37")
-	}
-
-	cipherBase64, err := ioutil.ReadFile("files/6.txt")
-	if err != nil {
-		panic(err)
-	}
-	data, err := base64.StdEncoding.DecodeString(string(cipherBase64))
-	if err != nil {
-		panic(err)
-	}
-
-	b, _, err := decryptRepeatingKeyXOR(data, letterFrequencies)
-	if err != nil && string(b)[:34] != "I'm back and I'm ringin' the bell" {
-		panic(err)
-	}
-
-	// 7. Decrypt AES-ECB mode with key
-	cipherBase64, err = ioutil.ReadFile("files/7.txt")
-	if err != nil {
-		panic(err)
-	}
-	data, err = base64.StdEncoding.DecodeString(string(cipherBase64))
-	if err != nil {
-		fmt.Println("error:", err)
-		return
-	}
-
-	err = decryptAES128ECB(data, []byte("YELLOW SUBMARINE"))
-	if err != nil {
-		panic(err)
-	}
-
-	// 8. Detect AES-ECB mode
-	ciphersAsHex, err = ioutil.ReadFile("files/8.txt")
-	if err != nil {
-		panic(err)
-	}
-
-	ciphers = make([][]byte, 0)
-	for _, hexCipher := range bytes.Split([]byte(ciphersAsHex), []byte("\n")) {
-		cipher := make([]byte, len(hexCipher)/2)
-		_, err := hex.Decode(cipher, hexCipher)
-		if err != nil {
-			panic(err)
-		}
-		ciphers = append(ciphers, cipher)
-	}
-
-	_, count := detectECBMode(ciphers)
-	if count < 4 {
-		panic("no repeating block found")
-	}
-
-}
-
 func detectECBMode(input [][]byte) ([]byte, int) {
 	var ecbCipher []byte
 	highestBlockCount := 0
@@ -177,18 +38,49 @@ func detectECBMode(input [][]byte) ([]byte, int) {
 
 }
 
-func decryptAES128ECB(input, key []byte) error {
+func encryptAESECB(input, key []byte) ([]byte, error) {
 	block, err := aes.NewCipher(key)
 	if err != nil {
-		return err
+		return []byte{}, err
+	}
+	bs := block.BlockSize()
+
+	if len(input)%bs == 0 {
+		input = append(input, PKCS7Pad([]byte{}, bs)...)
+	}
+	out := make([]byte, 0, len(input))
+	for len(input) > 0 {
+		if len(input) < bs {
+			input = PKCS7Pad(input, bs)
+		}
+		temp := make([]byte, bs)
+		block.Encrypt(temp, input[:bs])
+		input = input[bs:]
+		out = append(out, temp...)
 	}
 
-	for len(input) > block.BlockSize() {
-		block.Decrypt(input[:aes.BlockSize], input[:aes.BlockSize])
-		input = input[aes.BlockSize:]
+	return out, nil
+
+}
+
+func decryptAESECB(input, key []byte) ([]byte, error) {
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return []byte{}, err
 	}
 
-	return nil
+	bs := block.BlockSize()
+	out := make([]byte, 0)
+	for len(input) > 0 {
+		temp := make([]byte, bs)
+		block.Decrypt(temp, input[:bs])
+		input = input[bs:]
+		out = append(out, temp...)
+	}
+
+	padLen := int(out[len(out)-1])
+	out = out[:len(out)-padLen]
+	return out, nil
 }
 
 func decryptRepeatingKeyXOR(input []byte, letterFrequencies map[byte]int) ([]byte, []byte, error) {
