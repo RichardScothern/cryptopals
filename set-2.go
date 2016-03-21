@@ -33,12 +33,10 @@ func decryptAESCBC(input, key, iv []byte) ([]byte, error) {
 	for len(input) > 0 {
 		temp := make([]byte, bs)
 		block.Decrypt(temp, input[:bs])
-
 		decrypted, err := fixedXOR(temp, prev)
 		if err != nil {
 			return []byte{}, err
 		}
-
 		out = append(out, decrypted...)
 		prev = input[:bs]
 		input = input[bs:]
@@ -130,7 +128,7 @@ const (
 	CBC
 )
 
-func ECBEncryptWithUnknown(input []byte) ([]byte, error) {
+func ECBEncryptWithUnknown(key, input []byte) ([]byte, error) {
 	unknown, err := base64.StdEncoding.DecodeString("Um9sbGluJyBpbiBteSA1LjAKV2l0aCBteSByYWctdG9wIGRvd24gc28gbXkgaGFpciBjYW4gYmxvdwpUaGUgZ2lybGllcyBvbiBzdGFuZGJ5IHdhdmluZyBqdXN0IHRvIHNheSBoaQpEaWQgeW91IHN0b3A/IE5vLCBJIGp1c3QgZHJvdmUgYnkK")
 	if err != nil {
 		return []byte{}, err
@@ -139,10 +137,8 @@ func ECBEncryptWithUnknown(input []byte) ([]byte, error) {
 	return encryptAESECB(toEncrypt, key)
 }
 
-var key = keyGen()
-
-func decryptUnknown() ([]byte, error) {
-	cipher, err := ECBEncryptWithUnknown([]byte{})
+func decryptUnknown(key []byte) ([]byte, error) {
+	cipher, err := ECBEncryptWithUnknown(key, []byte{})
 	if err != nil {
 		return []byte{}, err
 	}
@@ -152,7 +148,7 @@ func decryptUnknown() ([]byte, error) {
 	// Addition of dummy padding block in ECB mode gives away block size
 	for i := 1; i < 32; i++ {
 		in := bytes.Repeat([]byte{'A'}, i)
-		cipher, err := ECBEncryptWithUnknown(in)
+		cipher, err := ECBEncryptWithUnknown(key, in)
 		if err != nil {
 			return []byte{}, err
 		}
@@ -168,7 +164,7 @@ func decryptUnknown() ([]byte, error) {
 
 	repeating := 3
 	in := bytes.Repeat([]byte{0}, repeating*blockSize)
-	cipher, err = ECBEncryptWithUnknown(in)
+	cipher, err = ECBEncryptWithUnknown(key, in)
 	if err != nil {
 		return []byte{}, err
 	}
@@ -182,7 +178,7 @@ func decryptUnknown() ([]byte, error) {
 	for blockNum := 0; blockNum < cipherLen/blockSize; blockNum++ {
 		for i := 1; i < blockSize+1; i++ {
 			shortBlock := bytes.Repeat([]byte{'A'}, blockSize-i)
-			cipher, err = ECBEncryptWithUnknown(shortBlock)
+			cipher, err = ECBEncryptWithUnknown(key, shortBlock)
 			if err != nil {
 				return []byte{}, err
 			}
@@ -190,7 +186,7 @@ func decryptUnknown() ([]byte, error) {
 			for b := 0; b < 128; b++ {
 				testInput := append(shortBlock, plainText...)
 				testInput = append(testInput, byte(b))
-				testEncrypted, err := ECBEncryptWithUnknown(testInput)
+				testEncrypted, err := ECBEncryptWithUnknown(key, testInput)
 				if err != nil {
 					return []byte{}, err
 				}
@@ -230,17 +226,15 @@ func profileFor(email string) map[string]interface{} {
 	}
 }
 
-var key1 = keyGen()
-
 func encodeProfile(p map[string]interface{}) []byte {
 	email := []byte("email=" + p["email"].(string))
 	rem := []byte(fmt.Sprintf("&uid=%d&role=%s", p["uid"], p["role"]))
 	return append(email, rem...)
 }
 
-func encryptedProfile(email string) ([]byte, error) {
+func encryptedProfile(key []byte, email string) ([]byte, error) {
 	encoded := encodeProfile(profileFor(email))
-	cipher, err := encryptAESECB(encoded, key1)
+	cipher, err := encryptAESECB(encoded, key)
 	if err != nil {
 		return []byte{}, err
 	}
@@ -248,7 +242,7 @@ func encryptedProfile(email string) ([]byte, error) {
 }
 
 // todo: pass keys in
-func ECBEncryptWithUnknownAndPrefix(prefix, input []byte) ([]byte, error) {
+func ECBEncryptWithUnknownAndPrefix(key, prefix, input []byte) ([]byte, error) {
 	unknown, err := base64.StdEncoding.DecodeString("Um9sbGluJyBpbiBteSA1LjAKV2l0aCBteSByYWctdG9wIGRvd24gc28gbXkgaGFpciBjYW4gYmxvdwpUaGUgZ2lybGllcyBvbiBzdGFuZGJ5IHdhdmluZyBqdXN0IHRvIHNheSBoaQpEaWQgeW91IHN0b3A/IE5vLCBJIGp1c3QgZHJvdmUgYnkK")
 	if err != nil {
 		return []byte{}, err
@@ -259,7 +253,7 @@ func ECBEncryptWithUnknownAndPrefix(prefix, input []byte) ([]byte, error) {
 	return encryptAESECB(toEncrypt, key)
 }
 
-func decryptUnknownWithPrefix(prefix []byte) ([]byte, error) {
+func decryptUnknownWithPrefix(key, prefix []byte) ([]byte, error) {
 	blockSize := 16
 	testBlock := bytes.Repeat([]byte{'A'}, blockSize)
 	testBlockEnc, err := encryptAESECB(testBlock, key)
@@ -275,7 +269,7 @@ func decryptUnknownWithPrefix(prefix []byte) ([]byte, error) {
 
 		// Keep adding to the dummy block until its encryption is found in
 		// the cipher.  This gives away the length
-		cipher, err := ECBEncryptWithUnknownAndPrefix(prefix, input)
+		cipher, err := ECBEncryptWithUnknownAndPrefix(key, prefix, input)
 		if err != nil {
 			return []byte{}, err
 		}
@@ -297,7 +291,7 @@ done:
 	for blockNum := 0; blockNum < (cipherLen/blockSize)-1; blockNum++ {
 		for i := 1; i < blockSize+1; i++ {
 			shortBlock := input[:len(input)-i]
-			cipher, err := ECBEncryptWithUnknownAndPrefix(prefix, shortBlock)
+			cipher, err := ECBEncryptWithUnknownAndPrefix(key, prefix, shortBlock)
 			if err != nil {
 				return []byte{}, err
 			}
@@ -305,7 +299,7 @@ done:
 			for b := 0; b < 128; b++ {
 				testInput := append(shortBlock, plainText...)
 				testInput = append(testInput, byte(b))
-				testEncrypted, err := ECBEncryptWithUnknownAndPrefix(prefix, testInput)
+				testEncrypted, err := ECBEncryptWithUnknownAndPrefix(key, prefix, testInput)
 				if err != nil {
 					return []byte{}, err
 				}
@@ -339,7 +333,7 @@ func encryptCommentsWithUserData(input, key []byte) ([]byte, error) {
 	prefix := []byte("comment1=cooking%20MCs;userdata=")
 	postfix := []byte(";comment2=%20like%20a%20pound%20of%20bacon")
 	toEncrypt := append(append(prefix, []byte(url.QueryEscape(string(input)))...), postfix...)
-
+	//	printBlocks("to encrypt", toEncrypt)
 	cipher, err := encryptAESCBC(toEncrypt, key, iv)
 	if err != nil {
 		return []byte{}, err
@@ -350,7 +344,6 @@ func encryptCommentsWithUserData(input, key []byte) ([]byte, error) {
 func isAdmin(input, key []byte) bool {
 	plainText, err := decryptAESCBC(input[16:], key, input[:16])
 	if err != nil {
-		fmt.Println(err)
 		return false
 	}
 
@@ -361,9 +354,35 @@ func isAdmin(input, key []byte) bool {
 func printBlocks(comment string, input []byte) {
 	fmt.Print(comment, " ")
 	for len(input) > 16 {
-		fmt.Print("[", string(input[:16]), "]  ")
+		fmt.Print("[", fmt.Sprintf("%q", input[:16]), "]  ")
 		input = input[16:]
 	}
 	pad := strings.Repeat(" ", 16-len(input))
-	fmt.Print("[", string(input), pad, "]")
+	fmt.Print("[", fmt.Sprintf("%q", input), pad, "]")
+	fmt.Println("")
+}
+
+func CBCBitFlip(key, input []byte) ([]byte, error) {
+	cipher, err := encryptCommentsWithUserData(input, key)
+	if err != nil {
+		return []byte{}, err
+	}
+
+	// fakeBlock has the xor of the cipher block which will be xored
+	// with it during the CBC decryption.  This essentially zeroes it..
+	fakeBlock, err := fixedXOR(cipher[32:48], input)
+	if err != nil {
+		return []byte{}, err
+	}
+	// ... meaning whatever is xored in will appear in the decrypted plaintext
+	fakeBlock, err = fixedXOR(fakeBlock, []byte("a=bcd;admin=true"))
+	if err != nil {
+		return []byte{}, err
+	}
+
+	forgery := make([]byte, 0)
+	forgery = append(forgery, cipher[:32]...) // IV + block 1
+	forgery = append(forgery, fakeBlock...)   // fake block
+	forgery = append(forgery, cipher[48:]...) // rest
+	return forgery, nil
 }

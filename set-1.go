@@ -192,14 +192,14 @@ func hexToBase64(input []byte) (string, error) {
 	return base64.StdEncoding.EncodeToString(decodedHex)[:expectedLen], nil
 }
 
-func fixedXOR(input, key []byte) ([]byte, error) {
-	if len(input) != len(key) {
+func fixedXOR(input1, input2 []byte) ([]byte, error) {
+	if len(input1) != len(input2) {
 		return []byte{}, fmt.Errorf("fixedxor: mismatched input lengths")
 	}
 
-	out := make([]byte, len(input))
-	for i := 0; i < len(input); i++ {
-		out[i] = input[i] ^ key[i]
+	out := make([]byte, len(input1))
+	for i := 0; i < len(input1); i++ {
+		out[i] = input1[i] ^ input2[i]
 	}
 
 	return out, nil

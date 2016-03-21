@@ -75,7 +75,7 @@ func TestEncryptionOracle(t *testing.T) {
 }
 
 func TestDecryptUnknown(t *testing.T) {
-	plainText, err := decryptUnknown()
+	plainText, err := decryptUnknown(keyGen())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,12 +88,13 @@ func TestDecryptUnknown(t *testing.T) {
 }
 
 func TestForgeAdminProfile(t *testing.T) {
+	key := keyGen()
 	// make an email of sufficient size to get an encryption
 	// of a block that is 'admin' with PKCS7Padding
 	// "admin\x11\x11\x11..."
 	block1 := strings.Repeat("A", 16-len("email="))
 	block2 := PKCS7Pad([]byte("admin"), 16)
-	cipher, err := encryptedProfile(block1 + string(block2))
+	cipher, err := encryptedProfile(key, block1+string(block2))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,13 +103,13 @@ func TestForgeAdminProfile(t *testing.T) {
 	// create a 3 block encryption with a valid middle block:
 	// "email=AAAAAAAAAAA", "AAA&uid=10&role="
 	email := strings.Repeat("A", 16-len("email=")+3)
-	cipher, err = encryptedProfile(email)
+	cipher, err = encryptedProfile(key, email)
 	if err != nil {
 		t.Fatal(err)
 	}
 	forgery := append(cipher[:32], roleForgery...)
 
-	d, err := decryptAESECB(forgery, key1)
+	d, err := decryptAESECB(forgery, key)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,7 +143,7 @@ func TestDecryptUnknownWithPrefixBiggy(t *testing.T) {
 }
 
 func testDecryptUnknownWithPrefix(t *testing.T, prefix []byte) {
-	plainText, err := decryptUnknownWithPrefix(prefix)
+	plainText, err := decryptUnknownWithPrefix(keyGen(), prefix)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -168,25 +169,13 @@ func TestPKCS7PadValidate(t *testing.T) {
 }
 
 func TestCBCBitFlip(t *testing.T) {
-	input := []byte("yellow submarine")
 	key := keyGen()
-	cipher, err := encryptCommentsWithUserData(input, key)
+	forgery, err := CBCBitFlip(key, bytes.Repeat([]byte{'A'}, 16))
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	// Bit flip block n to influence block n+1
-	fakeBlock, _ := fixedXOR(cipher[32:48], input)
-	fakeBlock, _ = fixedXOR(fakeBlock, []byte("a=bcd;jdmin=true"))
-
-	forgery := make([]byte, 0)
-	forgery = append(forgery, cipher[:32]...) // IV + block 1
-	forgery = append(forgery, fakeBlock...)   // fake block
-	forgery = append(forgery, cipher[48:]...) // rest
-
 	isAdmin := isAdmin(forgery, key)
 	if !isAdmin {
 		t.Errorf("decrpytion should be admin")
 	}
-
 }
